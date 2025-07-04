@@ -131,3 +131,148 @@ jobs:
         run: |
           echo "GitHub release created with the following files:"
           ls ./downloaded-artifacts/**/*
+
+      - name: 📦 Collect logs if build fails
+        if: failure()
+        run: |
+         mkdir -p logs
+          echo "📅 构建时间：$(date '+%Y-%m-%d %H:%M:%S')" > logs/BUILD_INFO.txt
+          echo "📱 构建设备：${{ github.event.inputs.FEIL }}" >> logs/BUILD_INFO.txt
+          echo "🔢 构建版本：build-${{ github.run_number }}" >> logs/BUILD_INFO.txt
+          echo "📦 仓库来源：${{ github.repository }}" >> logs/BUILD_INFO.txt
+          echo "👤 仓库拥有者：${{ github.repository_owner }}" >> logs/BUILD_INFO.txt
+          cp -r kernel_workspace/kernel_platform/common/out logs/common || true
+          cp -r kernel_workspace/kernel_platform/out logs/platform || true
+          zip -r logs.zip logs || true
+
+
+      - name: 🗂️ Upload build logs to GitHub
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+         name: Kernel_Build_Logs_${{ github.run_number }}
+         path: logs.zip
+
+      - name: 🚨 Upload logs to Telegram (on failure)
+        if: failure()
+        run: |
+         escape_markdown_v2() {
+         local raw="$1"
+         echo "$raw" | sed -e 's/\\/\\\\/g' -e 's/\*/\\*/g' -e 's/_/\\_/g' -e 's/\[/\\[/g' \
+                        -e 's/\]/\\]/g' -e 's/(/\\(/g' -e 's/)/\\)/g' -e 's/\./\\./g' \
+                        -e 's/-/\\-/g' -e 's/=/\\=/g' -e 's/!/\\!/g'
+         }
+
+         OWNER="${{ github.repository_owner }}"
+         if [[ "$OWNER" == "sxppya" ]]; then
+         FEIL_ESCAPED=$(escape_markdown_v2 "${{ github.event.inputs.FEIL }}")
+         VERSION_ESCAPED=$(escape_markdown_v2 "build-${{ github.run_number }}")
+
+         if [ -f logs.zip ]; then
+           curl -F document=@logs.zip \
+             -F chat_id=${{ secrets.TG_CHAT_ID }} \
+             -F caption="❌ 构建失败\\! 已打包日志\\.\n📱 设备：${FEIL_ESCAPED}\n🏷️ 版本：${VERSION_ESCAPED}" \
+             -F parse_mode=MarkdownV2 \
+             https://api.telegram.org/bot${{ secrets.TG_BOT_TOKEN }}/sendDocument
+         else
+         echo "⚠️ 未找到 logs.zip，跳过上传"
+         fi
+         else
+         echo "⛔ 非主仓库（$OWNER），跳过 Telegram 推送"
+         fi
+
+
+          
+      - name: Compress AnyKernel3 to zip
+        if: ${{ success() }}
+        run: |
+          ZIP_NAME="${{ env.KSUVER }}_${{ steps.feil_clean.outputs.value }}${{ steps.suffix.outputs.value }}.zip"
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+          cd AnyKernel3
+          zip -r ../$ZIP_NAME ./*
+          cd ..
+
+      - name: Upload to GitHub Releases
+        uses: softprops/action-gh-release@v1
+        env:
+         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+         name: "${{ env.KSUVER }}_${{ steps.feil_clean.outputs.value }}${{ steps.suffix.outputs.value }}"
+         tag_name: "${{ env.KSUVER }}_${{ steps.feil_clean.outputs.value }}${{ steps.suffix.outputs.value }}"
+         files: |
+          ./${{ env.ZIP_NAME }}
+          ./AnyKernel3/Image
+          
+      - name: Upload zip to Telegram (only for your repo)
+        if: ${{ success() }}
+        run: |
+         if [[ "${{ github.repository_owner }}" == "sxppya" ]]; then
+         curl -F document=@./${{ env.ZIP_NAME }} \
+           -F chat_id=${{ secrets.TG_CHAT_ID }} \
+           -F caption="📦 内核构建完成！版本号：${{ env.KSUVER }} 设备：${{ github.event.inputs.FEIL }}" \
+           https://api.telegram.org/bot${{ secrets.TG_BOT_TOKEN }}/sendDocument
+           else
+           echo "⛔ 非主仓库，跳过 Telegram 推送"
+           fi
+
+
+      - name: Upload Image to Telegram (only for your repo)
+        if: ${{ success() }}
+        run: |
+         if [[ "${{ github.repository_owner }}" == "sxppya" ]]; then
+         curl -F document=@./AnyKernel3/Image \
+           -F chat_id=${{ secrets.TG_CHAT_ID }} \
+           -F caption="📦 Image 上传成功！设备：${{ github.event.inputs.FEIL }}，Tag：build-${{ env.KSUVER }}" \
+           https://api.telegram.org/bot${{ secrets.TG_BOT_TOKEN }}/sendDocument
+           else
+           echo "⛔ 非主仓库，跳过 Telegram 推送"
+           fi
+
+      - name: Telegram 推送
+        if: always()
+        run: |
+          escape_markdown_v2() {
+          local raw="$1"
+          echo "$raw" | sed -e 's/\\/\\\\/g' \
+                        -e 's/\*/\\*/g' \
+                        -e 's/_/\\_/g' \
+                        -e 's/\[/\\[/g' \
+                        -e 's/\]/\\]/g' \
+                        -e 's/(/\\(/g' \
+                        -e 's/)/\\)/g' \
+                        -e 's/\./\\./g' \
+                        -e 's/-/\\-/g' \
+                        -e 's/=/\\=/g' \
+                        -e 's/!/\\!/g' \
+                        -e 's/#/\\#/g' \
+                        -e 's/~/\\~/g' \
+                        -e 's/\`/\\`/g' \
+                        -e 's/>/\\>/g' \
+                        -e 's/\+/\\+/g' \
+                        -e 's/|/\\|/g' \
+                        -e 's/{/\\{/g' \
+                        -e 's/}/\\}/g'
+          }
+
+          if [[ "${GITHUB_REPOSITORY_OWNER}" == "sxppya" ]]; then
+          STATUS="✅ 构建成功"
+          [[ "success" != "success" ]] && STATUS="❌ 构建失败"
+
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="${{ env.KSUVER }}_${{ steps.feil_clean.outputs.value }}${{ steps.suffix.outputs.value }}"
+
+          RAW_TEXT="*OnePlus 内核构建通知* 🧱\
+                    *状态：* ${STATUS}\
+                    *仓库：* ${REPO}\
+                    *版本：* ${TAG}\
+                    [查看构建日志](https://github.com/${REPO}/actions/runs/${{ github.run_id }})"
+
+              TEXT_ESCAPED=$(escape_markdown_v2 "$RAW_TEXT")
+
+              curl -s -X POST https://api.telegram.org/bot${{ secrets.TG_BOT_TOKEN }}/sendMessage \
+              -d chat_id=${{ secrets.TG_CHAT_ID }} \
+              -d parse_mode="MarkdownV2" \
+              -d text="$TEXT_ESCAPED"
+              else
+              echo "⛔ 非主仓库，跳过 Telegram 推送"
+              fi
