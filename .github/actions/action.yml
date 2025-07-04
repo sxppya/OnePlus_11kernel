@@ -410,6 +410,6 @@ runs:
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-        name: ${{ inputs.model }}_${{ inputs.android_version }}-${{ inputs.kernel_version }}_Next_${{ env.KSUVER }}_SUSFS_${{ env.SUSVER }}
-        path: |
-        *.zip
+          name: ${{ inputs.model }}_${{ inputs.android_version }}-${{ inputs.kernel_version }}_Next_${{ env.KSUVER }}_SUSFS_${{ env.SUSVER }}
+          path: |
+          *.zip
