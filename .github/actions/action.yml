@@ -412,4 +412,4 @@ runs:
         with:
           name: ${{ inputs.model }}_${{ inputs.android_version }}-${{ inputs.kernel_version }}_Next_${{ env.KSUVER }}_SUSFS_${{ env.SUSVER }}
           path: |
-          *.zip
+            *.zip
